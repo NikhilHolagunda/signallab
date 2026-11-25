@@ -77,10 +77,13 @@ function TopActions() {
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
-      // Slide left of the node sheet (480px + gutter) on wide screens.
-      animate={{ opacity: 1, y: 0, x: selectedId ? "var(--sheet-offset)" : 0 }}
-      transition={{ type: "spring", stiffness: 260, damping: 32 }}
-      className="absolute right-4 top-4 z-30 flex items-center gap-2 [--sheet-offset:0px] sm:right-6 sm:top-5 lg:[--sheet-offset:-484px]"
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.05 }}
+      className={cn(
+        "absolute right-4 top-4 z-30 flex items-center gap-2 transition-[right] duration-300 ease-out sm:right-6 sm:top-5",
+        // Slide left of the node sheet (480px + gutters) on wide screens.
+        selectedId && "lg:right-[508px]",
+      )}
     >
       <Button variant="glass" onClick={() => setPaletteOpen(true)} className="w-44 justify-start sm:w-60">
         <Search className="text-neon-cyan" />

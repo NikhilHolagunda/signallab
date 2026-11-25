@@ -75,7 +75,14 @@ function useSimulation(data: GraphData) {
       )
       .force("center", forceCenter<SimNode>())
       .stop();
-    sim.alpha(known > 0.8 ? 0.25 : 1);
+    if (known > 0.8) {
+      sim.alpha(0.25); // mostly-known layout: gentle reheat, animate the rest
+    } else {
+      // Fresh layout: settle most of the way synchronously so the first frame
+      // isn't an explosion and settling doesn't depend on frame rate.
+      sim.alpha(1).tick(nodes.length < 1500 ? 160 : 60);
+      for (const n of nodes) positionCache.set(n.id, { x: n.x ?? 0, y: n.y ?? 0, z: n.z ?? 0 });
+    }
 
     const neighbors = new Map<string, Set<string>>();
     for (const l of data.links) {
@@ -340,27 +347,41 @@ function Labels({
   return null;
 }
 
-type ControlsLike = { target: THREE.Vector3; update: () => void };
+type ControlsLike = THREE.EventDispatcher<{ start: object }> & {
+  target: THREE.Vector3;
+  update: () => void;
+};
 
+/** Glide the camera to the selected node; stops once it arrives or the user grabs the controls. */
 function CameraRig({ target }: { target: SimNode | null }) {
   const controls = useThree((s) => s.controls) as unknown as ControlsLike | null;
   const camera = useThree((s) => s.camera);
-  const flyUntil = React.useRef(0);
+  const flying = React.useRef(false);
   const goal = React.useMemo(() => new THREE.Vector3(), []);
   const desired = React.useMemo(() => new THREE.Vector3(), []);
   const targetId = target?.id;
 
   React.useEffect(() => {
-    if (targetId) flyUntil.current = performance.now() + 1400;
+    flying.current = !!targetId;
   }, [targetId]);
 
+  React.useEffect(() => {
+    if (!controls) return;
+    const cancel = () => (flying.current = false);
+    controls.addEventListener("start", cancel);
+    return () => controls.removeEventListener("start", cancel);
+  }, [controls]);
+
   useFrame(() => {
-    if (!target || !controls || performance.now() > flyUntil.current) return;
+    if (!flying.current || !target || !controls) return;
     goal.set(target.x ?? 0, target.y ?? 0, target.z ?? 0);
-    controls.target.lerp(goal, 0.08);
+    controls.target.lerp(goal, 0.1);
     desired.copy(camera.position).sub(controls.target).normalize().multiplyScalar(110).add(goal);
-    camera.position.lerp(desired, 0.05);
+    camera.position.lerp(desired, 0.08);
     controls.update();
+    if (controls.target.distanceTo(goal) < 0.5 && camera.position.distanceTo(desired) < 1) {
+      flying.current = false;
+    }
   });
   return null;
 }
