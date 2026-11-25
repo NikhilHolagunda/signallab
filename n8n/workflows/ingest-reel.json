@@ -1,0 +1,292 @@
+{
+  "id": "SignalLabIngest1",
+  "name": "SignalLab · Ingest reel",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 1800
+  },
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "6b0d3c0e-0001-4a51-9a1a-5e2f1d000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "3f6d2a51-7c1e-4b8e-9d0a-51a1ab000001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "signallab-ingest",
+        "responseMode": "onReceived",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "notes": "Spring POSTs {reelId, url, callbackUrl, callbackToken}. Responds 202 immediately; the result goes to callbackUrl."
+    },
+    {
+      "id": "6b0d3c0e-0002-4a51-9a1a-5e2f1d000002",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "c01", "name": "reelId", "type": "string", "value": "={{ $json.body.reelId }}" },
+            { "id": "c02", "name": "url", "type": "string", "value": "={{ $json.body.url }}" },
+            { "id": "c03", "name": "callbackUrl", "type": "string", "value": "={{ $json.body.callbackUrl }}" },
+            { "id": "c04", "name": "callbackToken", "type": "string", "value": "={{ $json.body.callbackToken }}" },
+            { "id": "c05", "name": "workerUrl", "type": "string", "value": "={{ $env.WORKER_URL || 'http://worker:8001' }}" },
+            { "id": "c06", "name": "ollamaUrl", "type": "string", "value": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}" },
+            { "id": "c07", "name": "ollamaModel", "type": "string", "value": "={{ $env.OLLAMA_MODEL || 'llama3.1:8b' }}" },
+            { "id": "c08", "name": "llmProvider", "type": "string", "value": "={{ ($env.LLM_PROVIDER || 'auto').toLowerCase() }}" },
+            { "id": "c09", "name": "openaiModel", "type": "string", "value": "={{ $env.OPENAI_MODEL || 'gpt-4o-mini' }}" },
+            { "id": "c10", "name": "anthropicModel", "type": "string", "value": "={{ $env.ANTHROPIC_MODEL || 'claude-haiku-5-5' }}" },
+            { "id": "c11", "name": "hasOpenAI", "type": "boolean", "value": "={{ !!$env.OPENAI_API_KEY }}" },
+            { "id": "c12", "name": "hasAnthropic", "type": "boolean", "value": "={{ !!$env.ANTHROPIC_API_KEY }}" }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "Job fields + non-secret config from env. API keys are never copied into items (only booleans), so they don't end up in execution logs."
+    },
+    {
+      "id": "6b0d3c0e-0003-4a51-9a1a-5e2f1d000003",
+      "name": "Transcribe (yt-dlp + Whisper)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.workerUrl }}/transcribe",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Worker-Token", "value": "={{ $env.WORKER_TOKEN || '' }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.url }) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "notes": "Media worker: downloads the reel with yt-dlp and transcribes it with faster-whisper. Returns {ok:false, error:{code,message}} for private reels, music-only audio, etc."
+    },
+    {
+      "id": "6b0d3c0e-0004-4a51-9a1a-5e2f1d000004",
+      "name": "Transcribed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "i01",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b0d3c0e-0005-4a51-9a1a-5e2f1d000005",
+      "name": "Detect Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.ollamaUrl }}/api/tags",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "notes": "Is a local Ollama up, and is the configured model pulled? Failure here is fine: we fall back to cloud keys, then to a heuristic."
+    },
+    {
+      "id": "6b0d3c0e-0006-4a51-9a1a-5e2f1d000006",
+      "name": "Build LLM request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 200],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Pick a provider (Ollama -> Anthropic -> OpenAI -> heuristic) and build the request.\nconst cfg = $('Config').first().json;\nconst tr = $('Transcribe (yt-dlp + Whisper)').first().json;\nconst probe = $input.first().json || {};\n\nconst SYSTEM = `You turn transcripts of short tech videos (Instagram reels) into study notes.\nReturn ONLY a JSON object, no prose, matching exactly this shape:\n{\n  \"title\": \"short descriptive title, max 80 chars\",\n  \"summary\": \"3-5 sentence recap of what the video teaches\",\n  \"concepts\": [{\"name\": \"concept\", \"explanation\": \"one sentence\"}],\n  \"codeSnippets\": [{\"language\": \"python\", \"code\": \"...\", \"description\": \"what it does\"}],\n  \"steps\": [\"ordered step the viewer should follow\"],\n  \"links\": [{\"url\": \"https://...\", \"label\": \"what it is\"}],\n  \"topics\": [\"2-6 broad lowercase topics, e.g. 'react', 'system design', 'llms'\"]\n}\nRules:\n- Only include code that is actually shown or dictated; make it runnable when the intent is clear.\n- Only include links that are explicitly mentioned. Never invent URLs.\n- Use empty arrays when something is absent.\n- If the transcript is thin, lean on the caption.`;\n\nconst parts = [];\nif (tr.title) parts.push(`VIDEO TITLE: ${String(tr.title).slice(0, 200)}`);\nif (tr.caption) parts.push(`CAPTION:\\n${String(tr.caption).slice(0, 2000)}`);\nparts.push(`TRANSCRIPT:\\n${String(tr.transcript || '').slice(0, 12000) || '(no speech detected)'}`);\nconst user = parts.join('\\n\\n');\n\nconst models = Array.isArray(probe.models) ? probe.models.map(m => m.model || m.name || '') : [];\nconst base = cfg.ollamaModel.split(':')[0];\nconst ollamaReady = models.some(n => n === cfg.ollamaModel || n.split(':')[0] === base);\nconst ollamaNote = probe.error ? 'ollama unreachable' : (ollamaReady ? 'ollama ready' : `ollama up but ${cfg.ollamaModel} not pulled`);\n\nconst want = cfg.llmProvider;\nlet provider = 'heuristic';\nif ((want === 'auto' || want === 'ollama') && ollamaReady) provider = 'ollama';\nelse if ((want === 'auto' || want === 'anthropic') && cfg.hasAnthropic) provider = 'anthropic';\nelse if ((want === 'auto' || want === 'openai') && cfg.hasOpenAI) provider = 'openai';\n\nlet llmUrl = null, llmBody = null, model = null;\nif (provider === 'ollama') {\n  model = cfg.ollamaModel;\n  llmUrl = `${cfg.ollamaUrl}/api/chat`;\n  llmBody = { model, stream: false, format: 'json', options: { temperature: 0.2, num_ctx: 8192 },\n    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }] };\n} else if (provider === 'anthropic') {\n  model = cfg.anthropicModel;\n  llmUrl = 'https://api.anthropic.com/v1/messages';\n  llmBody = { model, max_tokens: 4096, system: SYSTEM, messages: [{ role: 'user', content: user }] };\n} else if (provider === 'openai') {\n  model = cfg.openaiModel;\n  llmUrl = 'https://api.openai.com/v1/chat/completions';\n  llmBody = { model, temperature: 0.2, response_format: { type: 'json_object' },\n    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }] };\n}\n\nreturn [{ json: { provider, model, llmUrl, llmBody, ollamaNote } }];"
+      }
+    },
+    {
+      "id": "6b0d3c0e-0007-4a51-9a1a-5e2f1d000007",
+      "name": "Has LLM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1320, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "i02",
+              "leftValue": "={{ $json.provider }}",
+              "rightValue": "heuristic",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b0d3c0e-0008-4a51-9a1a-5e2f1d000008",
+      "name": "Call LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 100],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llmUrl }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify($json.provider === 'openai' ? { Authorization: 'Bearer ' + $env.OPENAI_API_KEY } : $json.provider === 'anthropic' ? { 'x-api-key': $env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } : {}) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llmBody) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "notes": "Ollama /api/chat, Anthropic /v1/messages or OpenAI /v1/chat/completions depending on what Build LLM request picked."
+    },
+    {
+      "id": "6b0d3c0e-0009-4a51-9a1a-5e2f1d000009",
+      "name": "Parse extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 200],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Tolerant JSON parsing of the model output; heuristic fallback if anything is off.\nconst b = $('Build LLM request').first().json;\nconst tr = $('Transcribe (yt-dlp + Whisper)').first().json;\nconst res = b.provider === 'heuristic' ? null : ($input.first().json || {});\n\nfunction firstObject(text) {\n  let start = text.indexOf('{');\n  while (start !== -1) {\n    let depth = 0, inStr = false, esc = false;\n    for (let i = start; i < text.length; i++) {\n      const ch = text[i];\n      if (inStr) { if (esc) esc = false; else if (ch === '\\\\') esc = true; else if (ch === '\"') inStr = false; }\n      else if (ch === '\"') inStr = true;\n      else if (ch === '{') depth++;\n      else if (ch === '}') { depth--; if (depth === 0) return text.slice(start, i + 1); }\n    }\n    start = text.indexOf('{', start + 1);\n  }\n  return null;\n}\nfunction parse(raw) {\n  let t = String(raw || '').trim().replace(/^```(?:json)?\\s*|\\s*```$/gm, '').trim();\n  const cand = t.startsWith('{') ? t : firstObject(t);\n  if (!cand) throw new Error('no JSON object in model output');\n  try { return JSON.parse(cand); } catch (e) { return JSON.parse(cand.replace(/,\\s*([}\\]])/g, '$1')); }\n}\nconst STOP = new Set('the a an and or but if then so to of in on for with is are was were be been this that it its you your we our i my me they them at by from as not no do does did can will just like get got use using how what why when here there about into out up down one two all any some more most very really also only than too'.split(' '));\nfunction heuristic() {\n  const caption = String(tr.caption || '');\n  const text = [caption, tr.transcript || ''].filter(Boolean).join(' ').trim();\n  const sentences = text.split(/(?<=[.!?])\\s+/);\n  const freq = {};\n  for (const w of (text.toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || [])) if (!STOP.has(w)) freq[w] = (freq[w] || 0) + 1;\n  const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(e => e[0]);\n  const hashtags = (caption.match(/#(\\w{2,30})/g) || []).map(h => h.slice(1).toLowerCase());\n  return {\n    title: tr.title || (sentences[0] || 'Untitled reel').slice(0, 80),\n    summary: sentences.slice(0, 3).join(' ').slice(0, 600),\n    concepts: keywords.slice(0, 5).map(k => ({ name: k, explanation: '' })),\n    codeSnippets: [], steps: [],\n    links: (text.match(/https?:\\/\\/[^\\s)\"'>]+/g) || []).map(u => ({ url: u, label: '' })),\n    topics: (hashtags.length ? hashtags : keywords).slice(0, 5),\n  };\n}\nconst arr = v => Array.isArray(v) ? v : [];\nfunction normalise(e) {\n  return {\n    title: String(e.title || tr.title || 'Untitled reel').slice(0, 200),\n    summary: String(e.summary || ''),\n    concepts: arr(e.concepts).map(c => typeof c === 'string' ? { name: c, explanation: '' } : c).filter(c => c && c.name),\n    codeSnippets: arr(e.codeSnippets || e.code_snippets).map(s => typeof s === 'string' ? { code: s } : s).filter(s => s && s.code)\n      .map(s => ({ language: s.language || 'text', code: String(s.code), description: s.description || '' })),\n    steps: arr(e.steps).map(String).filter(Boolean),\n    links: arr(e.links).map(l => typeof l === 'string' ? { url: l, label: '' } : l).filter(l => l && /^https?:/.test(l.url || '')),\n    topics: (typeof e.topics === 'string' ? e.topics.split(',') : arr(e.topics)).map(t => String(t).trim().replace(/^#/, '').toLowerCase()).filter(t => t && t.length <= 40).slice(0, 8),\n  };\n}\n\nlet ext = null, provider = b.provider, model = b.model, llmError = null;\nif (res) {\n  try {\n    if (res.error) throw new Error(typeof res.error === 'string' ? res.error : (res.error.message || JSON.stringify(res.error)));\n    let content;\n    if (provider === 'ollama') content = res.message && res.message.content;\n    else if (provider === 'openai') content = res.choices && res.choices[0] && res.choices[0].message.content;\n    else content = arr(res.content).filter(c => c.type === 'text').map(c => c.text).join('');\n    ext = normalise(parse(content));\n  } catch (e) { llmError = String(e.message || e).slice(0, 300); }\n}\nconst degraded = !ext;\nif (!ext) { ext = normalise(heuristic()); provider = 'heuristic'; model = null; }\n\nconst concepts = ext.concepts.map(c => c.explanation ? `${c.name}: ${c.explanation}` : c.name).join('; ');\nconst embedText = [ext.title, ext.summary, concepts, ext.topics.join(', ')].filter(Boolean).join('. ');\nreturn [{ json: { extraction: ext, provider, model, degraded, llmError, ollamaNote: b.ollamaNote, embedText } }];"
+      }
+    },
+    {
+      "id": "6b0d3c0e-0010-4a51-9a1a-5e2f1d000010",
+      "name": "Embed (MiniLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 200],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.workerUrl }}/embed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Worker-Token", "value": "={{ $env.WORKER_TOKEN || '' }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ texts: [$json.embedText] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "notes": "sentence-transformers/all-MiniLM-L6-v2, 384-d, unit-normalised."
+    },
+    {
+      "id": "6b0d3c0e-0011-4a51-9a1a-5e2f1d000011",
+      "name": "Done payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 200],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const tr = $('Transcribe (yt-dlp + Whisper)').first().json;\nconst p = $('Parse extraction').first().json;\nconst e = $input.first().json || {};\nif (!Array.isArray(e.vectors) || !Array.isArray(e.vectors[0])) {\n  return [{ json: { status: 'failed', provider: p.provider, error: { code: 'embedding_failed', message: 'The embedding worker failed.', detail: JSON.stringify(e.error || e).slice(0, 500) } } }];\n}\nreturn [{ json: {\n  status: 'done', provider: p.provider, model: p.model, degraded: p.degraded,\n  title: tr.title, caption: tr.caption, uploader: tr.uploader, duration: tr.duration, language: tr.language,\n  transcript: tr.transcript, noSpeech: tr.noSpeech, thumbnail: tr.thumbnail,\n  extraction: p.extraction, embedding: e.vectors[0], embeddingModel: e.model,\n} }];"
+      }
+    },
+    {
+      "id": "6b0d3c0e-0012-4a51-9a1a-5e2f1d000012",
+      "name": "Failure payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 420],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const t = $input.first().json || {};\nconst err = t.error && t.error.code\n  ? t.error\n  : { code: 'worker_unavailable', message: 'The media worker could not be reached or crashed.', detail: JSON.stringify(t.error || t).slice(0, 500) };\nreturn [{ json: { status: 'failed', error: err } }];"
+      }
+    },
+    {
+      "id": "6b0d3c0e-0013-4a51-9a1a-5e2f1d000013",
+      "name": "Callback to Spring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Ingest-Token", "value": "={{ $('Config').first().json.callbackToken }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "POST /api/reels/{id}/ingested with the one-time X-Ingest-Token Spring minted for this job."
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Transcribe (yt-dlp + Whisper)", "type": "main", "index": 0 }]] },
+    "Transcribe (yt-dlp + Whisper)": { "main": [[{ "node": "Transcribed?", "type": "main", "index": 0 }]] },
+    "Transcribed?": {
+      "main": [
+        [{ "node": "Detect Ollama", "type": "main", "index": 0 }],
+        [{ "node": "Failure payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detect Ollama": { "main": [[{ "node": "Build LLM request", "type": "main", "index": 0 }]] },
+    "Build LLM request": { "main": [[{ "node": "Has LLM?", "type": "main", "index": 0 }]] },
+    "Has LLM?": {
+      "main": [
+        [{ "node": "Call LLM", "type": "main", "index": 0 }],
+        [{ "node": "Parse extraction", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call LLM": { "main": [[{ "node": "Parse extraction", "type": "main", "index": 0 }]] },
+    "Parse extraction": { "main": [[{ "node": "Embed (MiniLM)", "type": "main", "index": 0 }]] },
+    "Embed (MiniLM)": { "main": [[{ "node": "Done payload", "type": "main", "index": 0 }]] },
+    "Done payload": { "main": [[{ "node": "Callback to Spring", "type": "main", "index": 0 }]] },
+    "Failure payload": { "main": [[{ "node": "Callback to Spring", "type": "main", "index": 0 }]] }
+  }
+}

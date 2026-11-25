@@ -3,3 +3,6 @@
 *.png binary
 *.gif binary
 *.jpg binary
+*.bat text eol=crlf
+*.sh text eol=lf
+gradlew text eol=lf

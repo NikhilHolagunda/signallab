@@ -38,6 +38,26 @@ class Transcriber(Protocol):
     async def transcribe(self, path: Path) -> Transcript: ...
 
 
+def _patch_pyav_compat() -> None:
+    """faster-whisper calls ``av.open(..., metadata_errors=...)``, a kwarg PyAV 15 removed.
+
+    Drop it instead of pinning PyAV < 15 (no wheels for current Python builds)."""
+    try:
+        import av
+    except ImportError:  # pragma: no cover
+        return
+    original = av.open
+    if getattr(original, "_signallab_compat", False):
+        return
+
+    def open_compat(*args, **kwargs):
+        kwargs.pop("metadata_errors", None)
+        return original(*args, **kwargs)
+
+    open_compat._signallab_compat = True  # type: ignore[attr-defined]
+    av.open = open_compat
+
+
 class FasterWhisperTranscriber:
     """Loads the model lazily on first use and keeps it in memory."""
 
@@ -58,6 +78,7 @@ class FasterWhisperTranscriber:
                         ErrorCode.TRANSCRIPTION_FAILED,
                         "faster-whisper is not installed (pip install -r requirements.txt)",
                     ) from exc
+                _patch_pyav_compat()
                 log.info("Loading Whisper model %r on %s (%s)…",
                          self.model_name, self.device, self.compute_type)
                 self._model = WhisperModel(

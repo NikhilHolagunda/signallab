@@ -19,7 +19,8 @@ build/
 out/
 
 # --- Infra secrets ---
-infra/secrets/
+infra/secrets/*
+!infra/secrets/.gitkeep
 
 # --- Node / Next.js ---
 node_modules/

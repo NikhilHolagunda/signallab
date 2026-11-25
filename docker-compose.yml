@@ -1,0 +1,5 @@
+# Convenience entry point so `docker compose up` works from the repo root.
+# The real stack lives in infra/docker-compose.yml.
+include:
+  - path: infra/docker-compose.yml
+    env_file: .env
