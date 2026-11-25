@@ -5,24 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
+    name: backend (Spring Boot)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-java@v4
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
-      - run: ruff check signallab tests
-      - run: pytest -q
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Lint (Spotless)
+        run: ./gradlew --no-daemon spotlessCheck
+      - name: Build + test (JUnit + Testcontainers / pgvector)
+        run: ./gradlew --no-daemon build
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-test-reports
+          path: backend/build/reports/tests
 
   frontend:
+    name: frontend (Next.js)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,4 +48,33 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npx tsc --noEmit
       - run: npm run build
+
+  worker:
+    name: media worker + n8n workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint + unit tests (no models needed)
+        working-directory: n8n/python-nodes
+        run: |
+          pip install ruff pytest pytest-asyncio numpy pydantic fastapi yt-dlp
+          ruff check signallab_worker tests
+          pytest -q
+      - name: Validate n8n workflow JSON
+        run: |
+          python - <<'PY'
+          import json
+          wf = json.load(open("n8n/workflows/ingest-reel.json"))
+          names = {n["name"] for n in wf["nodes"]}
+          for src, conn in wf["connections"].items():
+              assert src in names, f"unknown source node {src}"
+              for branch in conn["main"]:
+                  for edge in branch:
+                      assert edge["node"] in names, f"{src} -> unknown {edge['node']}"
+          print(f"ok: {len(names)} nodes, {len(wf['connections'])} connections")
+          PY
