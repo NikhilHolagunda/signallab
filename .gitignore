@@ -11,6 +11,16 @@ env/
 .coverage
 htmlcov/
 
+# --- Java / Gradle ---
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+out/
+
+# --- Infra secrets ---
+infra/secrets/
+
 # --- Node / Next.js ---
 node_modules/
 .next/

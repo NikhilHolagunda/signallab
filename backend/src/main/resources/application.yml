@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: signallab
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/signallab}
+    username: ${DATABASE_USER:signallab}
+    password: ${DATABASE_PASSWORD:signallab}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+signallab:
+  jwt:
+    # HS256 secret, >= 32 bytes. The default only exists so `./gradlew bootRun` works
+    # out of the box; the app logs a loud warning when it's in use.
+    secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-0123456789abcdef}
+    issuer: signallab
+    access-ttl: ${JWT_ACCESS_TTL:15m}
+    refresh-ttl: ${JWT_REFRESH_TTL:30d}
+  cookie:
+    name: sl_refresh
+    secure: ${COOKIE_SECURE:false}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+  ingest:
+    n8n-webhook-url: ${N8N_WEBHOOK_URL:http://localhost:5678/webhook/signallab-ingest}
+    # Where n8n should POST results back to. From inside docker-compose this is
+    # http://backend:8080; for a backend running on the host use host.docker.internal.
+    callback-base-url: ${INGEST_CALLBACK_BASE_URL:http://host.docker.internal:8080}
+    timeout: ${INGEST_TIMEOUT:20m}
+    # Which URLs POST /api/reels accepts. Default: Instagram reels/posts only.
+    allowed-url-pattern: ${ALLOWED_REEL_URL_PATTERN:^https?://(www\.|m\.)?instagram\.com/([\w.]+/)?(reels?|p|tv)/[A-Za-z0-9_-]+.*$}
+  worker:
+    url: ${WORKER_URL:http://localhost:8001}
+    token: ${WORKER_TOKEN:}
+  github:
+    token: ${GITHUB_TOKEN:}
+    max-pages: ${GITHUB_MAX_PAGES:10}
+  graph:
+    similarity-threshold: ${GRAPH_SIMILARITY_THRESHOLD:0.45}
+    max-neighbors: ${GRAPH_MAX_NEIGHBORS:6}
