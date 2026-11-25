@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..errors import ErrorCode, IngestError
+from .errors import ErrorCode, IngestError
 
 log = logging.getLogger(__name__)
 
