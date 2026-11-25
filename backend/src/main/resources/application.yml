@@ -1,8 +1,8 @@
-spring:
+﻿spring:
   application:
     name: signallab
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/signallab}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/signallab}
     username: ${DATABASE_USER:signallab}
     password: ${DATABASE_PASSWORD:signallab}
   jpa:
@@ -59,8 +59,8 @@ signallab:
     # http://backend:8080; for a backend running on the host use host.docker.internal.
     callback-base-url: ${INGEST_CALLBACK_BASE_URL:http://host.docker.internal:8080}
     timeout: ${INGEST_TIMEOUT:20m}
-    # Which URLs POST /api/reels accepts. Default: Instagram reels/posts only.
-    allowed-url-pattern: ${ALLOWED_REEL_URL_PATTERN:^https?://(www\.|m\.)?instagram\.com/([\w.]+/)?(reels?|p|tv)/[A-Za-z0-9_-]+.*$}
+    # Which URLs POST /api/reels accepts (regex). Blank = Instagram reels/posts only.
+    allowed-url-pattern: ${ALLOWED_REEL_URL_PATTERN:}
   worker:
     url: ${WORKER_URL:http://localhost:8001}
     token: ${WORKER_TOKEN:}

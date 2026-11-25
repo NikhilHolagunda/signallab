@@ -15,6 +15,9 @@ import org.springframework.http.MediaType;
 
 class AuthIntegrationTest extends IntegrationTest {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     @Test
     void registerIssuesAccessTokenAndHttpOnlyRefreshCookie() throws Exception {
         Session s = register();
@@ -78,7 +81,16 @@ class AuthIntegrationTest extends IntegrationTest {
         Cookie rotated = first.getResponse().getCookie("sl_refresh");
         assertThat(rotated.getValue()).isNotEqualTo(s.refreshCookie().getValue());
 
-        // Replaying the old (rotated) cookie looks like theft: reject it...
+        // Within the grace window a replay is treated as a concurrent-refresh race: rejected,
+        // but nobody gets logged out.
+        mvc.perform(post("/api/auth/refresh").cookie(s.refreshCookie()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("refresh_race"));
+
+        // Long after rotation, a replay looks like theft: reject it...
+        jdbc.update(
+                "UPDATE refresh_tokens SET revoked_at = now() - interval '1 hour' WHERE token_hash = ?",
+                dev.signallab.common.Hashing.sha256Hex(s.refreshCookie().getValue()));
         mvc.perform(post("/api/auth/refresh").cookie(s.refreshCookie()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("refresh_reused"));

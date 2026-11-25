@@ -43,6 +43,11 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.addAll(listOf("-Xlint:all,-serial,-processing", "-parameters"))
 }
 
+// Only the executable boot jar; no "-plain" jar to confuse the Dockerfile's COPY.
+tasks.jar {
+    enabled = false
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
     testLogging {

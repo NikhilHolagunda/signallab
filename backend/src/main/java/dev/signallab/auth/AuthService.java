@@ -5,6 +5,7 @@ import dev.signallab.auth.AuthDtos.RegisterRequest;
 import dev.signallab.common.ApiException;
 import dev.signallab.common.Hashing;
 import dev.signallab.config.AppProperties;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
+    static final Duration REUSE_GRACE = Duration.ofSeconds(15);
 
     private final UserRepository users;
     private final RefreshTokenRepository refreshTokens;
@@ -86,6 +89,11 @@ public class AuthService {
                 .findByTokenHash(Hashing.sha256Hex(rawToken))
                 .orElseThrow(() -> ApiException.unauthorized("refresh_invalid", "Refresh token is invalid"));
         if (token.isRevoked()) {
+            // Two tabs (or a double-mounted effect) refreshing at once is a race, not theft:
+            // the cookie jar already holds the newer token, so tell the client to retry.
+            if (token.revokedWithin(REUSE_GRACE, now)) {
+                throw ApiException.unauthorized("refresh_race", "Refresh already in progress, retry");
+            }
             int n = refreshTokens.revokeAllForUser(token.getUserId(), now);
             log.warn("Refresh token reuse for user {} — revoked {} sessions", token.getUserId(), n);
             throw ApiException.unauthorized("refresh_reused", "Session expired, please sign in again");

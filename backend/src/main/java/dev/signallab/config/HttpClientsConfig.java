@@ -14,6 +14,9 @@ public class HttpClientsConfig {
     @Bean
     RestClient.Builder outboundRestClientBuilder() {
         HttpClient http = HttpClient.newBuilder()
+                // The JDK client tries an h2c upgrade on plain http://, which Node servers
+                // (n8n) answer by cancelling the request. Internal hops are HTTP/1.1.
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();

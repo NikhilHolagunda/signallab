@@ -42,6 +42,10 @@ public class RefreshToken {
         return revokedAt != null;
     }
 
+    public boolean revokedWithin(java.time.Duration window, Instant now) {
+        return revokedAt != null && !revokedAt.isBefore(now.minus(window));
+    }
+
     public boolean isExpired(Instant now) {
         return expiresAt.isBefore(now);
     }

@@ -35,6 +35,9 @@ public class ReelService {
     private static final Pattern INSTAGRAM =
             Pattern.compile("instagram\\.com/(?:[\\w.]+/)?(?:reels?|p|tv)/([A-Za-z0-9_-]+)", Pattern.CASE_INSENSITIVE);
 
+    static final String DEFAULT_ALLOWED =
+            "^https?://(www\\.|m\\.)?instagram\\.com/([\\w.]+/)?(reels?|p|tv)/[A-Za-z0-9_-]+.*$";
+
     private final NodeRepository nodes;
     private final NodeService nodeService;
     private final N8nClient n8n;
@@ -44,7 +47,9 @@ public class ReelService {
         this.nodes = nodes;
         this.nodeService = nodeService;
         this.n8n = n8n;
-        this.allowed = Pattern.compile(props.ingest().allowedUrlPattern(), Pattern.CASE_INSENSITIVE);
+        String pattern = props.ingest().allowedUrlPattern();
+        this.allowed = Pattern.compile(
+                pattern == null || pattern.isBlank() ? DEFAULT_ALLOWED : pattern, Pattern.CASE_INSENSITIVE);
     }
 
     public record Accepted(UUID id, NodeStatus status, boolean duplicate) {}
