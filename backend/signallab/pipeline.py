@@ -118,30 +118,17 @@ class Pipeline:
             )
 
             self.store.set_status(node_id, NodeStatus.EMBEDDING)
-            vec = await self.embedder.embed([reel_embed_text(ext)])
-            self.store.update_node(
+            await self.finalize_reel(
                 node_id,
-                title=ext.title[:200] or "Untitled reel",
-                summary=ext.summary,
-                data={
-                    "extraction": ext.model_dump(),
+                ext,
+                provider=provider,
+                extra={
                     "transcript": tr.text,
                     "segments": [seg.__dict__ for seg in tr.segments],
                     "language": tr.language,
                     "no_speech": no_speech,
-                    "provider": provider,
-                    "degraded": provider == "heuristic",
                 },
             )
-            self.store.set_embedding(node_id, vec[0])
-            await self._link_topics(node_id, ext.topics, create=True)
-            self.store.prune_orphan_topics()
-
-            self.store.set_status(node_id, NodeStatus.DONE)
-            done = self.store.get_node(node_id)
-            assert done is not None
-            write_sandbox(s.sandbox_dir, done)
-            log.info("Reel %s done via %s: %s", node_id, provider, ext.title)
         except IngestError as exc:
             log.warning("Reel %s failed: %s", node_id, exc)
             self.store.update_node(node_id, data={"error_detail": exc.detail[:1000]})
@@ -159,6 +146,33 @@ class Pipeline:
             )
         finally:
             self.on_change()
+
+    async def finalize_reel(
+        self, node_id: str, ext: Extraction, *, provider: str, extra: dict | None = None
+    ) -> None:
+        """Embed + store an extraction, wire topic edges, write the sandbox.
+
+        Split out so the demo seeder can inject canned extractions."""
+        vec = await self.embedder.embed([reel_embed_text(ext)])
+        self.store.update_node(
+            node_id,
+            title=ext.title[:200] or "Untitled reel",
+            summary=ext.summary,
+            data={
+                "extraction": ext.model_dump(),
+                "provider": provider,
+                "degraded": provider == "heuristic",
+                **(extra or {}),
+            },
+        )
+        self.store.set_embedding(node_id, vec[0])
+        await self._link_topics(node_id, ext.topics, create=True)
+        self.store.prune_orphan_topics()
+        self.store.set_status(node_id, NodeStatus.DONE)
+        done = self.store.get_node(node_id)
+        assert done is not None
+        write_sandbox(self.settings.sandbox_dir, done)
+        log.info("Reel %s done via %s: %s", node_id, provider, ext.title)
 
     # ── GitHub stars ─────────────────────────────────────────────────
 
