@@ -26,6 +26,5 @@ export function clusterColor(cluster: number): string {
 export const KIND_META: Record<NodeKind, { label: string; glyph: string }> = {
   reel: { label: "Reel", glyph: "▶" },
   github: { label: "GitHub star", glyph: "★" },
-  reading: { label: "Reading", glyph: "¶" },
   topic: { label: "Topic", glyph: "#" },
 };

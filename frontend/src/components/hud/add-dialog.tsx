@@ -2,19 +2,18 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BookOpen, Film, Star, Loader2 } from "lucide-react";
+import { Film, Loader2, Star } from "lucide-react";
 
 import { type AddTab, useSignal } from "@/components/providers/signal-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const TABS: { id: AddTab; label: string; icon: React.ElementType }[] = [
   { id: "reel", label: "Reel", icon: Film },
   { id: "github", label: "GitHub stars", icon: Star },
-  { id: "reading", label: "Reading", icon: BookOpen },
 ];
 
 export function AddDialog() {
@@ -58,7 +57,6 @@ export function AddDialog() {
           >
             {addTab === "reel" && <ReelForm />}
             {addTab === "github" && <GithubForm />}
-            {addTab === "reading" && <ReadingForm />}
           </motion.div>
         </AnimatePresence>
       </DialogContent>
@@ -109,7 +107,8 @@ function ReelForm() {
         placeholder="https://www.instagram.com/reel/…"
       />
       <p className="mt-2 text-xs text-dim">
-        yt-dlp → Whisper → local LLM → embeddings. Takes ~30–90s on CPU. You can keep exploring.
+        Runs as an n8n workflow: yt-dlp → Whisper → LLM → embeddings. A minute or two on CPU — keep
+        exploring meanwhile.
       </p>
       <FormError error={error} />
       <div className="mt-4 flex justify-end">
@@ -142,55 +141,13 @@ function GithubForm() {
         placeholder="GitHub username"
       />
       <p className="mt-2 text-xs text-dim">
-        Public stars only. Set GITHUB_TOKEN in .env to avoid the 60 req/hour limit.
+        Public stars only. Set GITHUB_TOKEN on the backend to avoid the 60 req/hour limit.
       </p>
       <FormError error={error} />
       {result && <p className="mt-3 text-xs text-neon-lime">{result}</p>}
       <div className="mt-4 flex justify-end">
         <Button variant="pink" disabled={!username.trim() || busy}>
           {busy && <Loader2 className="animate-spin" />} Import stars
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function ReadingForm() {
-  const { closeAdd, refreshGraph } = useSignal();
-  const [url, setUrl] = React.useState("");
-  const [title, setTitle] = React.useState("");
-  const [note, setNote] = React.useState("");
-  const [tags, setTags] = React.useState("");
-  const { busy, error, submit } = useSubmit(
-    () =>
-      api.importReading([
-        {
-          url: url.trim(),
-          title: title.trim(),
-          note: note.trim(),
-          tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        },
-      ]),
-    () => {
-      void refreshGraph();
-      closeAdd();
-    },
-  );
-  return (
-    <form onSubmit={submit} className="space-y-2.5">
-      <Input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
-      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-      <Textarea
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Why you saved it (this is what gets embedded)"
-      />
-      <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="tags, comma, separated" />
-      {/* TODO: fetch + summarise the page body instead of relying on the note. */}
-      <FormError error={error} />
-      <div className="flex justify-end pt-1">
-        <Button variant="neon" disabled={!url.trim() || busy}>
-          {busy && <Loader2 className="animate-spin" />} Add to map
         </Button>
       </div>
     </form>

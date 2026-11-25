@@ -1,28 +1,32 @@
 @import "tailwindcss";
 
 /* ── Tokens ─────────────────────────────────────────────────────────
-   Dark-first. Neon accents over glass. Display + mono pairing. */
+   Dark-only. Cyan accent, drifting violet/pink aurora, frosted glass.
+   Space Grotesk headings · Inter body · JetBrains Mono labels. */
 @theme inline {
   --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
-  --color-void: #04050a;
-  --color-panel: rgb(14 17 28 / 0.62);
-  --color-panel-solid: #0b0e17;
-  --color-line: rgb(148 163 184 / 0.14);
-  --color-line-strong: rgb(148 163 184 / 0.28);
-  --color-fg: #e6e9f2;
-  --color-muted: #8a93a8;
-  --color-dim: #566079;
+  --color-void: #05040b;
+  --color-panel: rgb(14 14 28 / 0.58);
+  --color-panel-solid: #0c0b17;
+  --color-line: rgb(167 160 220 / 0.14);
+  --color-line-strong: rgb(167 160 220 / 0.3);
+  --color-fg: #ebe9f7;
+  --color-muted: #9591b0;
+  --color-dim: #5f5b7a;
 
+  --color-cyan: #22d3ee;
+  --color-violet: #8b5cf6;
+  --color-pink: #ec4899;
+  /* legacy aliases used by the graph HUD */
   --color-neon-cyan: #22d3ee;
   --color-neon-pink: #e879f9;
   --color-neon-lime: #a3e635;
-  --color-signal: #e50914; /* nod to the portfolio's red */
 
-  --shadow-glow-cyan: 0 0 0 1px rgb(34 211 238 / 0.35), 0 0 24px -4px rgb(34 211 238 / 0.55);
-  --shadow-glow-pink: 0 0 0 1px rgb(232 121 249 / 0.35), 0 0 24px -4px rgb(232 121 249 / 0.5);
+  --shadow-glow-cyan: 0 0 0 1px rgb(34 211 238 / 0.35), 0 0 28px -4px rgb(34 211 238 / 0.55);
+  --shadow-glow-pink: 0 0 0 1px rgb(236 72 153 / 0.35), 0 0 28px -4px rgb(236 72 153 / 0.5);
 
   --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
   --animate-scan: scan 2.2s linear infinite;
@@ -36,54 +40,88 @@
   from { background-position: -200% 0; }
   to { background-position: 200% 0; }
 }
+@keyframes drift-a {
+  0%, 100% { transform: translate3d(-10%, -6%, 0) scale(1); }
+  50% { transform: translate3d(12%, 8%, 0) scale(1.15); }
+}
+@keyframes drift-b {
+  0%, 100% { transform: translate3d(8%, 10%, 0) scale(1.1); }
+  50% { transform: translate3d(-14%, -6%, 0) scale(0.95); }
+}
+@keyframes grain {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-3%, 2%); }
+  40% { transform: translate(2%, -3%); }
+  60% { transform: translate(-2%, -1%); }
+  80% { transform: translate(3%, 3%); }
+}
 
-html, body {
-  height: 100%;
+html {
   background: var(--color-void);
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+body {
+  min-height: 100dvh;
+  background: var(--color-void);
+}
+/* The graph app owns the viewport; the landing page scrolls (via Lenis). */
+body:has([data-app-shell]) {
   overflow: hidden;
+}
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgb(148 163 184 / 0.25) transparent;
+  scrollbar-color: rgb(167 160 220 / 0.25) transparent;
 }
-
 ::selection {
   background: rgb(34 211 238 / 0.35);
 }
+/* Native cursor stays visible; the glow is an addition, not a replacement. */
+@media (pointer: fine) {
+  a, button, [role="button"], input, textarea { cursor: pointer; }
+  input, textarea { cursor: text; }
+}
+
+/* Lenis */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
 
 @layer components {
-  /* Frosted glass panel */
   .glass {
     background: var(--color-panel);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
     border: 1px solid var(--color-line);
     box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.04),
-      0 20px 50px -20px rgb(0 0 0 / 0.7);
+      inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+      0 24px 60px -24px rgb(0 0 0 / 0.75);
   }
-
-  .hairline-top {
-    position: relative;
-  }
+  .hairline-top { position: relative; }
   .hairline-top::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgb(34 211 238 / 0.6), rgb(232 121 249 / 0.6), transparent);
+    background: linear-gradient(90deg, transparent, rgb(34 211 238 / 0.7), rgb(139 92 246 / 0.6), rgb(236 72 153 / 0.6), transparent);
   }
-
+  .text-gradient {
+    background: linear-gradient(100deg, #e9fbff 0%, #22d3ee 35%, #a78bfa 65%, #f472b6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   .shimmer {
     background-image: linear-gradient(90deg, transparent 0%, rgb(34 211 238 / 0.18) 50%, transparent 100%);
     background-size: 200% 100%;
     animation: var(--animate-scan);
   }
-
   .kbd {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -92,5 +130,20 @@ html, body {
     border-radius: 4px;
     border: 1px solid var(--color-line-strong);
     color: var(--color-muted);
+  }
+  .label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--color-dim);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

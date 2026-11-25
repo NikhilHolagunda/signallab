@@ -44,7 +44,7 @@ export function GraphStage() {
           <p className="font-display text-xl">Backend offline</p>
           <p className="mt-2 text-sm text-muted">{graphError}</p>
           <pre className="mt-4 rounded-lg bg-black/40 p-3 text-left font-mono text-xs text-neon-cyan">
-            cd backend{"\n"}uvicorn signallab.main:app --reload
+            docker compose up -d{"\n"}# or: cd backend && ./gradlew bootRun
           </pre>
           <Button variant="neon" className="mt-4" onClick={() => void refreshGraph()}>
             Retry
@@ -69,8 +69,8 @@ export function GraphStage() {
             Your map is empty.
           </h1>
           <p className="mt-3 text-muted">
-            Paste a tech reel, pull in your GitHub stars, or drop a reading list. SignalLab
-            embeds everything and shows you what you actually care about.
+            Paste a tech reel or pull in your GitHub stars. SignalLab transcribes, distills and
+            embeds everything, then shows you what you actually care about.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Button variant="neon" onClick={() => openAdd("reel")}>

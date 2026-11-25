@@ -1,14 +1,30 @@
-// Mirrors backend/signallab/models.py
+// Mirrors the Spring Boot API (backend/src/main/java/dev/signallab/**/*Dtos.java).
 
-export type NodeKind = "reel" | "github" | "reading" | "topic";
-export type NodeStatus =
-  | "queued"
-  | "downloading"
-  | "transcribing"
-  | "extracting"
-  | "embedding"
-  | "done"
-  | "failed";
+export type NodeKind = "reel" | "github" | "topic";
+export type NodeStatus = "queued" | "processing" | "done" | "failed";
+
+export interface User {
+  id: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  expiresAt: string;
+  user: User;
+}
+
+/** RFC 9457 problem+json, plus our stable `code` and optional field errors. */
+export interface Problem {
+  type?: string;
+  title?: string;
+  status: number;
+  detail?: string;
+  code?: string;
+  errors?: Record<string, string>;
+}
 
 export interface GraphNode {
   id: string;
@@ -17,7 +33,7 @@ export interface GraphNode {
   cluster: number; // -1 = unclustered
   size: number;
   url: string | null;
-  created_at: string;
+  createdAt: string;
 }
 
 export interface GraphLink {
@@ -48,7 +64,7 @@ export interface CodeSnippet {
   code: string;
   description: string;
 }
-export interface Link {
+export interface LinkRef {
   url: string;
   label: string;
 }
@@ -56,9 +72,9 @@ export interface Extraction {
   title: string;
   summary: string;
   concepts: Concept[];
-  code_snippets: CodeSnippet[];
+  codeSnippets: CodeSnippet[];
   steps: string[];
-  links: Link[];
+  links: LinkRef[];
   topics: string[];
 }
 
@@ -72,15 +88,14 @@ export interface RelatedNode {
 export interface NodeDetail {
   id: string;
   kind: NodeKind;
-  source_key: string;
   title: string;
   summary: string;
   url: string | null;
   status: NodeStatus;
-  error_code: string | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
   related: RelatedNode[];
   data: {
     extraction?: Extraction;
@@ -88,19 +103,18 @@ export interface NodeDetail {
     caption?: string;
     uploader?: string;
     duration?: number;
-    provider?: string;
-    degraded?: boolean;
-    no_speech?: boolean;
-    error_detail?: string;
-    // github
-    full_name?: string;
+    /** Spoken language for reels, primary language for GitHub repos. */
     language?: string | null;
+    provider?: string;
+    model?: string;
+    degraded?: boolean;
+    noSpeech?: boolean;
+    errorDetail?: string;
+    // github
+    fullName?: string;
     stars?: number;
     topics?: string[];
-    starred_at?: string | null;
-    // reading
-    note?: string;
-    tags?: string[];
+    starredAt?: string | null;
   };
 }
 
@@ -110,10 +124,10 @@ export interface NodeSummary {
   title: string;
   status: NodeStatus;
   url: string | null;
-  error_code: string | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SearchHit {
@@ -124,22 +138,13 @@ export interface SearchHit {
   score: number;
 }
 
-export interface Health {
-  ok: boolean;
-  version: string;
-  queue_depth: number;
-  providers: {
-    llm_provider: string;
-    llm_model: string | null;
-    llm_detail: string;
-    embedder: string;
-    vector_index: string;
-    whisper_model: string;
-  };
+export interface ReelAccepted {
+  id: string;
+  status: NodeStatus;
+  duplicate: boolean;
 }
 
 export interface ImportResult {
   imported: number;
   updated: number;
-  skipped: number;
 }

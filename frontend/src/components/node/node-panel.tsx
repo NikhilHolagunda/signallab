@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ExternalLink,
-  FileText,
+  FileDown,
   Loader2,
   RotateCw,
   Star,
@@ -18,11 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
 import { clusterColor, KIND_META } from "@/lib/colors";
-import type { NodeDetail } from "@/lib/types";
+import type { NodeDetail, NodeKind } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 import { CodeBlock } from "./code-block";
-
-const TERMINAL = new Set(["done", "failed"]);
 
 export function NodePanel() {
   const { selectedId, select } = useSignal();
@@ -39,7 +37,8 @@ export function NodePanel() {
         const n = await api.node(selectedId);
         if (cancelled) return;
         setNode(n);
-        if (!TERMINAL.has(n.status)) timer = setTimeout(load, 2000);
+        // Keep polling while n8n is still working on it.
+        if (n.status === "queued" || n.status === "processing") timer = setTimeout(load, 2500);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       }
@@ -60,7 +59,7 @@ export function NodePanel() {
           <p className="mt-10 text-center text-sm text-rose-300">{error}</p>
         ) : !current ? (
           <div className="mt-16 flex justify-center">
-            <Loader2 className="size-5 animate-spin text-neon-cyan" />
+            <Loader2 className="size-5 animate-spin text-cyan" />
           </div>
         ) : (
           <motion.div
@@ -80,28 +79,20 @@ export function NodePanel() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-6">
-      <h3 className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-dim">{title}</h3>
+      <h3 className="label mb-2">{title}</h3>
       {children}
     </section>
   );
 }
 
-function Chip({
-  children,
-  onClick,
-  color,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  color?: string;
-}) {
+function Chip({ children, onClick, color }: { children: React.ReactNode; onClick?: () => void; color?: string }) {
   const Comp = onClick ? "button" : "span";
   return (
     <Comp
       onClick={onClick}
       className={cn(
         "inline-flex items-center rounded-full border border-line bg-white/[0.03] px-2.5 py-0.5 font-mono text-[11px] text-fg/90",
-        onClick && "transition hover:border-neon-cyan/50 hover:text-white",
+        onClick && "transition hover:border-cyan/50 hover:text-white",
       )}
       style={color ? { borderColor: `${color}55`, color } : undefined}
     >
@@ -110,11 +101,24 @@ function Chip({
   );
 }
 
+async function downloadRecap(node: NodeDetail) {
+  const md = await api.recap(node.id);
+  const url = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+  const a = Object.assign(document.createElement("a"), {
+    href: url,
+    download: `${node.title.replace(/[^\w-]+/g, "-").slice(0, 60) || "recap"}.md`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function NodeBody({ node }: { node: NodeDetail }) {
   const { graph, select, refreshGraph, refreshJobs } = useSignal();
   const gnode = graph?.nodes.find((n) => n.id === node.id);
   const color = clusterColor(gnode?.cluster ?? -1);
   const ext = node.data.extraction;
+  const inFlight = node.status === "queued" || node.status === "processing";
+
   const topicByName = React.useMemo(() => {
     const m = new Map<string, string>();
     graph?.nodes.filter((n) => n.kind === "topic").forEach((n) => m.set(n.label.toLowerCase(), n.id));
@@ -130,8 +134,7 @@ function NodeBody({ node }: { node: NodeDetail }) {
     return graph.nodes.filter((n) => ids.has(n.id));
   }, [graph, node]);
 
-  const sourceLabel =
-    node.kind === "reel" ? "Original reel" : node.kind === "github" ? "Open on GitHub" : "Open link";
+  const sourceLabel = node.kind === "reel" ? "Original reel" : "Open on GitHub";
 
   const del = async () => {
     if (!window.confirm(`Remove “${node.title}” from your map? This can't be undone.`)) return;
@@ -141,27 +144,29 @@ function NodeBody({ node }: { node: NodeDetail }) {
     void refreshJobs();
   };
 
+  const tags = ext?.topics ?? node.data.topics ?? [];
+
   return (
     <>
-      {/* header */}
-      <div className="flex items-center gap-2 pr-8 font-mono text-[10px] uppercase tracking-[0.2em]">
+      <div className="flex flex-wrap items-center gap-2 pr-8 font-mono text-[10px] uppercase tracking-[0.2em]">
         <span style={{ color }}>
           {KIND_META[node.kind].glyph} {KIND_META[node.kind].label}
         </span>
         <span className="text-dim">·</span>
-        <span className="text-dim">{timeAgo(node.created_at)}</span>
+        <span className="text-dim">{timeAgo(node.createdAt)}</span>
         {node.data.provider && (
           <>
             <span className="text-dim">·</span>
-            <span className="text-dim">via {node.data.provider}</span>
+            <span className="text-dim">
+              via {node.data.provider}
+              {node.data.model ? ` (${node.data.model})` : ""}
+            </span>
           </>
         )}
       </div>
-      <h2 className="mt-2 font-display text-2xl font-semibold leading-tight tracking-tight">
-        {node.title}
-      </h2>
+      <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-tight">{node.title}</h2>
       <div className="mt-3 flex flex-wrap gap-2">
-        {node.url && (
+        {node.url && node.kind !== "topic" && (
           <Button asChild size="sm" variant="neon">
             <a href={node.url} target="_blank" rel="noreferrer">
               <ExternalLink /> {sourceLabel}
@@ -169,24 +174,29 @@ function NodeBody({ node }: { node: NodeDetail }) {
           </Button>
         )}
         {node.kind === "reel" && node.status === "done" && (
-          <Button asChild size="sm" variant="glass">
-            <a href={`/api/nodes/${node.id}/recap.md`} target="_blank" rel="noreferrer">
-              <FileText /> recap.md
-            </a>
+          <Button size="sm" variant="glass" onClick={() => void downloadRecap(node)}>
+            <FileDown /> recap.md
           </Button>
         )}
       </div>
 
-      {/* processing / failure states */}
-      {!TERMINAL.has(node.status) && <ProcessingState status={node.status} />}
+      {inFlight && (
+        <div className="mt-5 rounded-xl border border-cyan/20 bg-cyan/[0.03] p-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Loader2 className="size-4 animate-spin text-cyan" /> n8n is processing this reel
+          </div>
+          <p className="mt-1.5 font-mono text-[11px] text-dim">download → transcribe → extract → embed</p>
+          <div className="shimmer mt-3 h-1 rounded-full bg-cyan/15" />
+        </div>
+      )}
       {node.status === "failed" && (
         <div className="mt-5 rounded-xl border border-rose-400/30 bg-rose-500/5 p-3">
-          <div className="flex items-center gap-2 text-sm text-rose-200">
-            <AlertTriangle className="size-4" /> {node.error}
+          <div className="flex items-start gap-2 text-sm text-rose-200">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {node.errorMessage}
           </div>
-          {node.data.error_detail && (
+          {node.data.errorDetail && (
             <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-rose-200/60">
-              {node.data.error_detail}
+              {node.data.errorDetail}
             </pre>
           )}
           <Button
@@ -206,20 +216,19 @@ function NodeBody({ node }: { node: NodeDetail }) {
       {node.data.degraded && (
         <div className="mt-5 flex gap-2 rounded-xl border border-amber-400/30 bg-amber-500/5 p-3 text-xs text-amber-200">
           <AlertTriangle className="size-4 shrink-0" />
-          No LLM was reachable, so this recap is a keyword heuristic. Start Ollama and hit retry.
+          No LLM was reachable, so this recap is a keyword heuristic. Start Ollama (or add an API key) and retry.
         </div>
       )}
-      {node.data.no_speech && (
+      {node.data.noSpeech && (
         <p className="mt-4 text-xs text-muted">No speech detected — notes are built from the caption.</p>
       )}
 
       {node.summary && (
-        <Section title={node.kind === "reading" ? "Note" : "Recap"}>
+        <Section title="Recap">
           <p className="text-[15px] leading-relaxed text-fg/90">{node.summary}</p>
         </Section>
       )}
 
-      {/* reel extraction */}
       {ext && ext.concepts.length > 0 && (
         <Section title="Concepts">
           <ul className="space-y-1.5">
@@ -243,15 +252,14 @@ function NodeBody({ node }: { node: NodeDetail }) {
           </ol>
         </Section>
       )}
-      {ext && ext.code_snippets.length > 0 && (
+      {ext && ext.codeSnippets.length > 0 && (
         <Section title="Code">
           <div className="space-y-3">
-            {ext.code_snippets.map((s, i) => (
+            {ext.codeSnippets.map((s, i) => (
               <CodeBlock key={i} snippet={s} />
             ))}
           </div>
-          {/* TODO: one-click "run in sandbox" (Pyodide / WebContainer). Files are already
-              written to data/sandboxes/<id>/ on the backend. */}
+          {/* TODO(sandbox): one-click "run" via Pyodide / WebContainers. */}
         </Section>
       )}
       {ext && ext.links.length > 0 && (
@@ -263,7 +271,7 @@ function NodeBody({ node }: { node: NodeDetail }) {
                   href={l.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="break-all font-mono text-xs text-neon-cyan hover:underline"
+                  className="break-all font-mono text-xs text-cyan hover:underline"
                 >
                   {l.label || l.url}
                 </a>
@@ -273,7 +281,6 @@ function NodeBody({ node }: { node: NodeDetail }) {
         </Section>
       )}
 
-      {/* github */}
       {node.kind === "github" && (
         <Section title="Repo">
           <div className="flex flex-wrap items-center gap-2">
@@ -281,37 +288,29 @@ function NodeBody({ node }: { node: NodeDetail }) {
             <Chip>
               <Star className="mr-1 size-3" /> {node.data.stars?.toLocaleString()}
             </Chip>
-            {node.data.starred_at && <Chip>starred {timeAgo(node.data.starred_at)}</Chip>}
+            {node.data.starredAt && <Chip>starred {timeAgo(node.data.starredAt)}</Chip>}
           </div>
         </Section>
       )}
 
-      {/* topics / tags */}
-      {(() => {
-        const tags = ext?.topics ?? node.data.topics ?? node.data.tags ?? [];
-        if (!tags.length) return null;
-        return (
-          <Section title="Topics">
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => {
-                const tid = topicByName.get(t.toLowerCase());
-                return (
-                  <Chip key={t} onClick={tid ? () => select(tid) : undefined}>
-                    #{t}
-                  </Chip>
-                );
-              })}
-            </div>
-          </Section>
-        );
-      })()}
+      {tags.length > 0 && (
+        <Section title="Topics">
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map((t) => {
+              const tid = topicByName.get(t.toLowerCase());
+              return (
+                <Chip key={t} onClick={tid ? () => select(tid) : undefined}>
+                  #{t}
+                </Chip>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       {node.kind === "topic" && (
         <Section title={`Signals tagged #${node.title}`}>
-          <NodeList
-            items={topicMembers.map((n) => ({ id: n.id, kind: n.kind, title: n.label }))}
-            onPick={select}
-          />
+          <NodeList items={topicMembers.map((n) => ({ id: n.id, kind: n.kind, title: n.label }))} onPick={select} />
         </Section>
       )}
 
@@ -323,11 +322,13 @@ function NodeBody({ node }: { node: NodeDetail }) {
 
       {node.data.transcript && <Transcript text={node.data.transcript} />}
 
-      <div className="mt-8 flex justify-end border-t border-line pt-4">
-        <Button size="sm" variant="ghost" onClick={del} className="text-rose-300/80 hover:text-rose-200">
-          <Trash2 /> Remove
-        </Button>
-      </div>
+      {node.kind !== "topic" && (
+        <div className="mt-8 flex justify-end border-t border-line pt-4">
+          <Button size="sm" variant="ghost" onClick={del} className="text-rose-300/80 hover:text-rose-200">
+            <Trash2 /> Remove
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -337,7 +338,7 @@ function NodeList({
   onPick,
   showScore,
 }: {
-  items: { id: string; kind: NodeDetail["kind"]; title: string; score?: number }[];
+  items: { id: string; kind: NodeKind; title: string; score?: number }[];
   onPick: (id: string) => void;
   showScore?: boolean;
 }) {
@@ -367,7 +368,8 @@ function Transcript({ text }: { text: string }) {
     <section className="mt-6">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-dim transition hover:text-fg"
+        aria-expanded={open}
+        className="label flex w-full items-center gap-2 transition hover:text-fg"
       >
         Transcript
         <span className="normal-case tracking-normal text-dim/70">· {text.split(/\s+/).length} words</span>
@@ -388,28 +390,5 @@ function Transcript({ text }: { text: string }) {
         )}
       </AnimatePresence>
     </section>
-  );
-}
-
-const STAGES = ["queued", "downloading", "transcribing", "extracting", "embedding"];
-
-function ProcessingState({ status }: { status: string }) {
-  const idx = STAGES.indexOf(status);
-  return (
-    <div className="mt-5 rounded-xl border border-neon-cyan/20 bg-neon-cyan/[0.03] p-3">
-      <ol className="space-y-1.5">
-        {STAGES.map((s, i) => (
-          <li key={s} className="flex items-center gap-2 font-mono text-xs">
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                i < idx ? "bg-neon-cyan" : i === idx ? "animate-pulse-dot bg-neon-cyan" : "bg-white/10",
-              )}
-            />
-            <span className={i <= idx ? "text-fg" : "text-dim"}>{s}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }

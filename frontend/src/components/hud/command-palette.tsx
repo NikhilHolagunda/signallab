@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Star, Loader2, Plus, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Plus, RefreshCw, Settings, Star } from "lucide-react";
 
 import { useSignal } from "@/components/providers/signal-provider";
 import {
@@ -19,8 +20,9 @@ import type { SearchHit } from "@/lib/types";
 // Below this cosine similarity a "match" is noise; hide it rather than pad the list.
 const MIN_SCORE = 0.05;
 
-/** ⌘K: semantic search over every node (reels, stars, reading, topics) + quick actions. */
+/** ⌘K: semantic search over the user's reels + GitHub stars, plus quick actions. */
 export function CommandPalette() {
+  const router = useRouter();
   const { paletteOpen, setPaletteOpen, select, openAdd, refreshGraph, graph } = useSignal();
   const [q, setQ] = React.useState("");
   const [hits, setHits] = React.useState<SearchHit[]>([]);
@@ -71,7 +73,7 @@ export function CommandPalette() {
     () =>
       (graph?.nodes ?? [])
         .filter((n) => n.kind !== "topic")
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, 6),
     [graph],
   );
@@ -153,8 +155,8 @@ export function CommandPalette() {
           <CommandItem value="import-github" onSelect={() => run(() => openAdd("github"))}>
             <Star className="size-4 text-neon-pink" /> Import GitHub stars
           </CommandItem>
-          <CommandItem value="add-reading" onSelect={() => run(() => openAdd("reading"))}>
-            <BookOpen className="size-4 text-neon-lime" /> Add to reading list
+          <CommandItem value="settings" onSelect={() => run(() => router.push("/app/settings"))}>
+            <Settings className="size-4 text-muted" /> Settings
           </CommandItem>
           <CommandItem value="refresh" onSelect={() => run(() => void refreshGraph())}>
             <RefreshCw className="size-4 text-muted" /> Refresh graph

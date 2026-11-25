@@ -102,6 +102,8 @@ interface SceneProps {
   focusCluster: number | null;
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
+  /** Initial camera distance from the origin (smaller = closer). */
+  cameraDistance?: number;
 }
 
 function GraphObjects({
@@ -226,6 +228,22 @@ function GraphObjects({
   // a single focus label follows whichever node is hovered/selected.
   const topics = React.useMemo(() => nodes.filter((n) => n.kind === "topic"), [nodes]);
   const focusNode = nodes.find((n) => n.id === focusId) ?? null;
+
+  // Frame the whole layout when the node set changes (unless a node is selected,
+  // in which case CameraRig flies to it).
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const controls = useThree((s) => s.controls) as unknown as ControlsLike | null;
+  React.useEffect(() => {
+    if (selectedId || nodes.length === 0) return;
+    let radius = 0;
+    for (const n of nodes) radius = Math.max(radius, Math.hypot(n.x ?? 0, n.y ?? 0, n.z ?? 0));
+    const fit = (radius + 20) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect);
+    const distance = THREE.MathUtils.clamp(fit * 1.05, 80, 1100);
+    controls?.target.set(0, 0, 0);
+    camera.position.setLength(distance);
+    controls?.update();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-frame on new data
+  }, [nodes, controls]);
 
   return (
     <>
@@ -391,12 +409,12 @@ export default function ForceGraphCanvas(props: SceneProps) {
   return (
     <div className="relative h-full w-full">
     <Canvas
-      camera={{ position: [0, 0, 320], fov: 55, near: 1, far: 3000 }}
+      camera={{ position: [0, 0, props.cameraDistance ?? 320], fov: 55, near: 1, far: 3000 }}
       dpr={[1, 2]}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      // Transparent so the page's aurora gradient glows through the scene.
+      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
     >
-      <color attach="background" args={["#04050a"]} />
-      <fog attach="fog" args={["#04050a", 260, 900]} />
+      <fog attach="fog" args={["#07051a", 260, 900]} />
       <Stars radius={600} depth={120} count={2500} factor={3} saturation={0} fade speed={0.4} />
       <GraphObjects {...props} overlay={overlay} />
       <OrbitControls

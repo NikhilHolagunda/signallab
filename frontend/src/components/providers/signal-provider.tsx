@@ -4,9 +4,9 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
-import type { GraphData, Health, NodeSummary } from "@/lib/types";
+import type { GraphData, NodeSummary } from "@/lib/types";
 
-export type AddTab = "reel" | "github" | "reading";
+export type AddTab = "reel" | "github";
 
 interface SignalState {
   graph: GraphData | null;
@@ -14,7 +14,6 @@ interface SignalState {
   refreshGraph: () => Promise<void>;
   jobs: NodeSummary[];
   refreshJobs: () => Promise<void>;
-  health: Health | null;
 
   selectedId: string | null;
   select: (id: string | null) => void;
@@ -38,20 +37,19 @@ export function useSignal(): SignalState {
   return ctx;
 }
 
-const ACTIVE = new Set(["queued", "downloading", "transcribing", "extracting", "embedding"]);
+const ACTIVE = new Set(["queued", "processing"]);
 
 export function SignalProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const selectedId = React.useMemo(() => {
-    const m = pathname?.match(/^\/node\/([^/]+)/);
+    const m = pathname?.match(/^\/app\/node\/([^/]+)/);
     return m ? decodeURIComponent(m[1]) : null;
   }, [pathname]);
 
   const [graph, setGraph] = React.useState<GraphData | null>(null);
   const [graphError, setGraphError] = React.useState<string | null>(null);
   const [jobs, setJobs] = React.useState<NodeSummary[]>([]);
-  const [health, setHealth] = React.useState<Health | null>(null);
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
   const [focusCluster, setFocusCluster] = React.useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -72,30 +70,27 @@ export function SignalProvider({ children }: { children: React.ReactNode }) {
       const list = await api.jobs();
       setJobs(list);
       const active = new Set(list.filter((j) => ACTIVE.has(j.status)).map((j) => j.id));
-      // A job left the active set => it finished (or failed): redraw the graph.
+      // A job left the active set => n8n called back (done or failed): redraw.
       const finished = [...prevActive.current].some((id) => !active.has(id));
       prevActive.current = active;
       if (finished) void refreshGraph();
     } catch {
-      /* backend down; graphError surfaces it */
+      /* surfaced via graphError */
     }
   }, [refreshGraph]);
 
-  // Initial load
   React.useEffect(() => {
     void refreshGraph();
     void refreshJobs();
-    api.health().then(setHealth).catch(() => setHealth(null));
   }, [refreshGraph, refreshJobs]);
 
-  // Poll jobs fast while something is processing, slowly otherwise.
+  // Poll fast while n8n is working on something, slowly otherwise.
   const hasActive = jobs.some((j) => ACTIVE.has(j.status));
   React.useEffect(() => {
-    const t = setInterval(refreshJobs, hasActive ? 2000 : 15000);
+    const t = setInterval(refreshJobs, hasActive ? 2500 : 20000);
     return () => clearInterval(t);
   }, [hasActive, refreshJobs]);
 
-  // ⌘K / Ctrl+K
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -108,7 +103,7 @@ export function SignalProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const select = React.useCallback(
-    (id: string | null) => router.push(id ? `/node/${encodeURIComponent(id)}` : "/", { scroll: false }),
+    (id: string | null) => router.push(id ? `/app/node/${encodeURIComponent(id)}` : "/app", { scroll: false }),
     [router],
   );
 
@@ -118,7 +113,6 @@ export function SignalProvider({ children }: { children: React.ReactNode }) {
     refreshGraph,
     jobs,
     refreshJobs,
-    health,
     selectedId,
     select,
     hoveredId,
